@@ -76,6 +76,14 @@ cc_binary(
 )
 
 cc_binary(
+  name = "idba_subasm",
+  srcs = ["src/release/idba_subasm.cpp"],
+  copts = ["-Wall", "-O3", "-Isrc", "-fopenmp"],
+  linkopts = ["-pthread", "-fopenmp", "-lm"],
+  deps = [":assembly"],
+)
+
+cc_binary(
   name = "idba_ud",
   srcs = ["src/release/idba_ud.cpp"],
   copts = ["-Wall", "-O3", "-Isrc", "-fopenmp"],
