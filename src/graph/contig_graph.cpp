@@ -14,6 +14,7 @@
 #include <queue>
 #include <set>
 #include <sstream>
+#include <map>
 
 #include "graph/contig_graph_branch_group.h"
 #include "sequence/sequence.h"
@@ -1178,6 +1179,38 @@ void ContigGraph::GetConsensus(deque<Sequence> &contigs)
             contigs.push_back(contig);
         }
     }
+}
+
+int ContigGraph::FindSeedComponents(
+  deque<Sequence> &contigs,
+  deque<ContigInfo> &contig_infos,
+  map<int, int> &seed_hits)
+{
+  int num_ccs = 0;
+  deque<deque<ContigGraphVertexAdaptor> > components;
+  deque<string> component_strings;
+  
+  GetComponents(components, component_strings);
+  for (unsigned i = 0; i < components.size(); ++i)
+  {
+    int seed_match_len = 0;
+    for (unsigned j = 0; j < components[i].size(); ++j)
+    {
+      ContigGraphVertexAdaptor contig = components[i][j];
+      int ref_id = contig.id();
+      seed_match_len += seed_hits[ref_id];
+    }
+    if (seed_match_len >= 100)
+    {
+      num_ccs++;
+      for (unsigned j = 0; j < components[i].size(); ++j)
+      {
+        contigs.push_back(components[i][j].contig());
+        contig_infos.push_back(components[i][j].contig_info());
+      }
+    }
+  }
+  return num_ccs;
 }
 
 bool ContigGraph::FindPath(ContigGraphVertexAdaptor from, ContigGraphVertexAdaptor to, ContigGraphPath &path)

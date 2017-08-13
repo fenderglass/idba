@@ -44,6 +44,14 @@ bool CompareHashAlignerRecord(const HashAlignerRecord &x, const HashAlignerRecor
     return x.match_length > y.match_length;
 }
 
+void ReadInput(const std::string &read_file, const std::string &long_read_file, const std::string &seed_contig_file, AssemblyInfo &assembly_info)
+{
+    if (seed_contig_file != "")
+        ReadSequence(seed_contig_file, assembly_info.seed_contigs);
+
+    ReadInput(read_file, long_read_file, assembly_info);
+}
+
 void ReadInput(const std::string &read_file, const std::string &long_read_file, AssemblyInfo &assembly_info)
 {
     if (read_file != "")
@@ -439,6 +447,34 @@ int64_t AlignReads(AssemblyInfo &assembly_info, HashAligner &hash_aligner, doubl
     fclose(falign);
 
     return num_aligned_reads;
+}
+
+int64_t AlignSeeds(
+  AssemblyInfo &assembly_info,
+  HashAligner &hash_aligner, 
+  vector<deque<HashAlignerRecord> > &seed_records,
+  double similar)
+{
+  int64_t num_aligned_reads = 0;
+  deque<Sequence> &seeds = assembly_info.seed_contigs;
+  seed_records.resize(seeds.size());
+  for (int64_t i = 0; i < (int64_t)seeds.size(); ++i)
+  {
+    Sequence seq(seeds[i]);
+    uint32_t max_records = seq.size();
+  
+    hash_aligner.AlignSequence(
+      seq, 
+      seed_records[i],
+      150,
+      similar, 
+      max_records);
+    if (seed_records[i].size() > 0)
+    {
+      ++num_aligned_reads;
+    }
+  }
+  return num_aligned_reads;
 }
 
 int64_t AlignReadsLocal(AssemblyInfo &assembly_info, HashAligner &hash_aligner, int min_match, int max_mismatch, const std::string &align_file)

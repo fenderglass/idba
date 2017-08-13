@@ -1,5 +1,5 @@
 /**
- * @file idba_ud.cpp
+ * @file idba_subasm.cpp
  * @brief An iterative de Bruijn graph assembler for sequencing data with highly uneven depth.
  * @author Yu Peng (ypeng@cs.hku.hk)
  * @version 1.0.6
@@ -41,6 +41,7 @@ struct IDBAOption
     string directory;
     string read_file;
     string long_read_file;
+    string seed_contig_file;
     deque<string> extra_read_files;
     int mink;
     int maxk;
@@ -130,6 +131,7 @@ int read_length = 0;
 void BuildHashGraph(int kmer_size);
 void Assemble(HashGraph &hash_graph);
 void AlignReads(const string &contig_file, const string &align_file);
+int64_t FilterSeedContigs(const string &contig_file, int kmer_size, deque<Sequence> &subasm_contigs, deque<ContigInfo> &subasm_contig_infos);
 void CorrectReads(int kmer_size);
 void LocalAssembly(int kmer_size, int new_kmer_size);
 void Iterate(int kmer_size, int new_kmer_size);
@@ -170,12 +172,18 @@ int main(int argc, char *argv[])
     desc.AddOption("no_correct", "", option.is_no_correct, "do not do correction");
     desc.AddOption("pre_correction", "", option.is_pre_correction, "perform pre-correction before assembly");
 
+    // subassembly options
+    desc.AddOption("seed_contig", "", option.seed_contig_file, "fasta seed contig file");
+
     try
     {
         desc.Parse(argc, argv);
 
         if (option.read_file == "" && option.long_read_file == "")
             throw logic_error("not enough parameters");
+
+        if (option.seed_contig_file == "" )
+            throw logic_error("seed_contig required");
 
         if (option.maxk < option.mink)
             throw invalid_argument("mink is larger than maxk");
@@ -187,7 +195,7 @@ int main(int argc, char *argv[])
     {
         cerr << e.what() << endl;
         cerr << "IDBA-UD - Iterative de Bruijn Graph Assembler for sequencing data with highly uneven depth." << endl;
-        cerr << "Usage: idba_ud -r read.fa -o output_dir" << endl;
+        cerr << "Usage: idba_subasm -r read.fa -o output_dir" << endl;
         cerr << "Allowed Options: " << endl;
         cerr << desc << endl;
         exit(1);
@@ -206,7 +214,7 @@ int main(int argc, char *argv[])
         omp_set_num_threads(option.num_threads);
     cout << "number of threads " << option.num_threads << endl;
 
-    ReadInput(option.read_file, option.long_read_file, assembly_info);
+    ReadInput(option.read_file, option.long_read_file, option.seed_contig_file, assembly_info);
     deque<Sequence> extra_reads;
     for (unsigned i = 0; i < option.extra_read_files.size(); ++i)
     {
@@ -219,6 +227,7 @@ int main(int argc, char *argv[])
     }
     cout << "reads " << assembly_info.reads.size() << endl;
     cout << "long reads " << assembly_info.long_reads.size() << endl;
+    cout << "seed contigs " << assembly_info.seed_contigs.size() << endl;
     cout << "extra reads " << extra_reads.size() << endl;
 
     assembly_info.long_reads.insert(assembly_info.long_reads.end(), extra_reads.begin(), extra_reads.end());
@@ -241,6 +250,8 @@ int main(int argc, char *argv[])
     int kmer_size = option.mink;
     while (true)
     {
+        //cout << "SKIPPING" << endl;
+        //break;
         cout << "kmer " << kmer_size << endl;
 
         if (kmer_size >= (option.mink + option.maxk)/2 || kmer_size == option.maxk)
@@ -270,15 +281,22 @@ int main(int argc, char *argv[])
 
     kmer_size = option.maxk;
 
-    deque<Sequence> contigs;
-    deque<string> names;
-    ReadSequence(option.contig_file(kmer_size), contigs, names);
-    FastaWriter writer(option.contig_file());
-    for (unsigned i = 0; i < contigs.size(); ++i)
-    {
-        if ((int)contigs[i].size() >= option.min_contig)
-            writer.Write(contigs[i], names[i]);
-    }
+    // obtain contigs only from connected components with seed contig hits
+    deque<Sequence> subasm_contigs;
+    deque<ContigInfo> subasm_contig_infos;
+    FilterSeedContigs(
+      option.contig_file(option.maxk),
+      option.maxk,
+      subasm_contigs,
+      subasm_contig_infos);
+
+    // output final filtered contigs
+    WriteContig(
+      option.contig_file(),
+      subasm_contigs,
+      subasm_contig_infos, 
+      FormatString("contig-%d", option.maxk),
+      option.min_contig);
 
     Scaffold(option.maxk, option.min_contig);
 
@@ -650,5 +668,52 @@ void AlignReads(const string &contig_file, ShortReadLibrary &library, const stri
     cout << "aligned " << num_aligned_reads << " reads" << endl;
 
     assembly_info.reads.swap(library.reads());
+}
+
+int64_t FilterSeedContigs(
+  const string &contig_file,
+  int kmer_size,
+  deque<Sequence> &subasm_contigs,
+  deque<ContigInfo> &subasm_contig_infos)
+{
+  int num_ccs = 0;
+
+  // align seed contigs
+  deque<Sequence> contigs;
+  ReadSequence(contig_file, contigs);
+
+  HashAligner hash_aligner(option.seed_kmer_size, option.min_contig, 2);
+  hash_aligner.Initialize(contigs);
+
+  cout << "aligning seed contigs" << endl;
+  vector<deque<HashAlignerRecord> > seed_records;
+  //printf("HERE hm2\n");
+  int64_t num_aligned_seeds = AlignSeeds(assembly_info, hash_aligner, seed_records, option.similar);
+  cout << "  - " << num_aligned_seeds << " aligned" << endl;
+
+  // compile contig hits from seed alignments
+  map<int, int> seed_hits;
+  int total_seed_length = 0;
+  for (unsigned i = 0; i < seed_records.size(); ++i)
+  {
+    for (unsigned j = 0; j < seed_records[i].size(); ++j)
+    {
+      int ref_id = seed_records[i][j].ref_id;
+      int match_length = seed_records[i][j].match_length;
+      seed_hits[ref_id] += match_length;
+      total_seed_length += match_length;
+      //printf("seed_records i,j = %d, %d\n", i, j);
+      //printf("  match_length: %d, total_length: %d\n", match_length, total_seed_length);
+      //fflush(stdout);
+    }
+  }
+
+  // build contig graph and find connected components hit by the seeds
+  ContigGraph contig_graph(kmer_size, contigs);
+
+  num_ccs = contig_graph.FindSeedComponents(subasm_contigs, subasm_contig_infos, seed_hits);
+  cout << "hit " << num_ccs << " connected components" << endl;
+  cout << "  - retained " << subasm_contigs.size() << " of " << contigs.size() << " contigs" << endl;
+  return num_ccs;
 }
 

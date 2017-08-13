@@ -137,6 +137,11 @@ public:
     void GetComponents(std::deque<std::deque<ContigGraphVertexAdaptor> > &components, std::deque<std::string> &component_strings);
     void GetConsensus(std::deque<Sequence> &consensus);
 
+    int FindSeedComponents(
+      std::deque<Sequence> &contigs,
+      std::deque<ContigInfo> &contig_infos,
+      std::map<int, int> &seed_hits); 
+
     bool FindPath(ContigGraphVertexAdaptor from, ContigGraphVertexAdaptor to, ContigGraphPath &path);
 
     void SortVertices()

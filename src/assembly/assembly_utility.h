@@ -39,6 +39,7 @@ struct AssemblyInfo
     std::vector<bool> read_flags;
     std::vector<bool> long_read_flags;
     std::deque<Sequence> ref_contigs;
+    std::deque<Sequence> seed_contigs;
 
     void ClearStatus()
     {
@@ -52,6 +53,7 @@ struct AssemblyInfo
 };
 
 void ReadInput(const std::string &read_file, const std::string &long_read_file, AssemblyInfo &assembly_info);
+void ReadInput(const std::string &read_file, const std::string &long_read_file, const std::string &seed_contig_file, AssemblyInfo &assembly_info);
 bool ReadHashAlignerRecords(FILE *fp, std::deque<HashAlignerRecord> &records);
 bool WriteHashAlignerRecords(FILE *fp, std::deque<HashAlignerRecord> &records);
 
@@ -75,6 +77,7 @@ void InsertExistKmers(AssemblyInfo &assembly_info, HashGraph &hash_graph);
 int64_t InsertIterativeKmers(const HashGraph &old_hash_graph, const Sequence &seq, HashGraph &hash_graph, int count = 1);
 
 int64_t AlignReads(AssemblyInfo &assembly_info, HashAligner &hash_aligner, double similar, const std::string &align_file, bool is_all = true);
+int64_t AlignSeeds(AssemblyInfo &assembly_info, HashAligner &hash_aligner, std::vector<std::deque<HashAlignerRecord> > &seed_records, double similar);
 int64_t AlignReadsLocal(AssemblyInfo &assembly_info, HashAligner &hash_aligner, int min_match, int max_mismatch, const std::string &align_file);
 int64_t AlignReadsMultiple(AssemblyInfo &assembly_info, HashAligner &hash_aligner, double similar, const std::string &align_file, bool is_all = true);
 
